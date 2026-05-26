@@ -1,9 +1,9 @@
 {
-  "name": "9router",
+  "name": "zero-agent",
   "version": "0.0.1",
-  "description": "9Router CLI - Start and manage 9Router server",
+  "description": "Zero Agent CLI - Start and manage Zero Agent server",
   "bin": {
-    "9router": "./cli.js"
+    "zero": "./cli.js"
   },
   "files": [
     "cli.js",
