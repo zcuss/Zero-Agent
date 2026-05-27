@@ -1,5 +1,5 @@
 {
-  "name": "zero-agent",
+  "name": "@zcus/zero-agent",
   "version": "0.0.1",
   "description": "Zero Agent CLI - Start and manage Zero Agent server",
   "bin": {
