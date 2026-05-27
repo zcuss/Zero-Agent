@@ -9,7 +9,8 @@
     "start": "set USERPROFILE=%CD%\\.build-home&& set HOME=%CD%\\.build-home&& set APPDATA=%CD%\\.build-home\\AppData\\Roaming&& set LOCALAPPDATA=%CD%\\.build-home\\AppData\\Local&& next start --port 20130",
     "dev:bun": "bun --bun next dev --webpack --port 20130",
     "build:bun": "bun --bun next build --webpack",
-    "start:bun": "bun ./.next/standalone/server.js"
+    "start:bun": "bun ./.next/standalone/server.js",
+    "db:init:supabase": "node scripts/init-supabase-db.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
