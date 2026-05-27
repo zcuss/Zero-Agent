@@ -1,6 +1,6 @@
 {
   "name": "zero-agent",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Zero Agent dark developer dashboard for AI infrastructure",
   "private": true,
   "scripts": {
