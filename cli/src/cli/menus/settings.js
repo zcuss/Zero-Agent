@@ -21,8 +21,8 @@ const DEFAULT_PASSWORD = "123456";
 // Resolve db.json path (matches app/src/lib/dataDir.js convention)
 function getDbPath() {
   return process.platform === "win32"
-    ? path.join(process.env.APPDATA || "", "9router", "db.json")
-    : path.join(os.homedir(), ".9router", "db.json");
+    ? path.join(process.env.APPDATA || "", "zero-agent", "db.json")
+    : path.join(os.homedir(), ".zero-agent", "db.json");
 }
 
 /**
@@ -100,7 +100,7 @@ async function showSettingsMenu(breadcrumb = []) {
 
 /**
  * Reset authMode to "password" via API. Used when OIDC is misconfigured
- * and user is locked out of dashboard. CLI bypasses auth via x-9r-cli-token.
+ * and user is locked out of dashboard. CLI bypasses auth via x-zero-cli-token.
  */
 async function resetAuthMode() {
   const ok = await confirm("Reset auth mode to PASSWORD (disable OIDC)?");
