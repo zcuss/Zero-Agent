@@ -98,10 +98,19 @@ export default function ProviderDetailClient() {
     setShowAddApiKeyModal(true);
   };
 
-  const triggerCodexApiTokenConnection = () => {
+  // Codex/OpenAI punya 3 cara:
+  // - OAuth
+  // - API Key (modal AddApiKeyModal, authType=apikey)
+  // - Access Token (paste/import, authType=access_token)
+  const triggerCodexApiKeyConnection = () => {
     setAddConnectionError("");
-    setAddApiKeyMode("api-token");
+    setAddApiKeyMode("default");
     setShowAddApiKeyModal(true);
+  };
+
+  const triggerCodexAccessTokenConnection = () => {
+    setAddConnectionError("");
+    openSessionImport();
   };
 
   const triggerAddConnection = () => {
@@ -157,29 +166,65 @@ export default function ProviderDetailClient() {
 
   const handleImportSession = async () => {
     if (!sessionPayload.trim()) {
-      setSessionImportError("Session JSON is required");
+      setSessionImportError("Session JSON / Access Token is required");
       return;
     }
 
     setSessionImportLoading(true);
     setSessionImportError("");
     try {
-      let parsed = null;
-      try {
-        parsed = JSON.parse(sessionPayload);
-      } catch {
-        setSessionImportError("Invalid JSON");
+      const raw = sessionPayload.trim();
+
+      const sessionProvider = providerId === "openai" ? "codex" : providerId;
+
+      // Codex/OpenAI: samakan dengan flow Cockpit sepenuhnya.
+      // Semua payload paste (raw token / JSON / array / wrapper) langsung lewat import-token
+      // agar selalu tersimpan sebagai authType=access_token.
+      if (sessionProvider === "codex") {
+        const res = await fetch("/api/oauth/codex/import-token", {
+          method: "POST",
+          headers: { "Content-Type": "text/plain" },
+          body: raw,
+        });
+
+        let data = null;
+        try {
+          data = await res.json();
+        } catch {
+          data = null;
+        }
+
+        if (!res.ok || !data?.success) {
+          setSessionImportError(data?.error || "Failed to import access token");
+          return;
+        }
+
+        await fetchConnections();
+        setShowSessionImportModal(false);
         return;
       }
 
-      const sessionProvider = providerId === "openai" ? "codex" : providerId;
+      let bodyToSend = raw;
+      let contentType = "text/plain";
+
+      if (raw.startsWith("{") || raw.startsWith("[")) {
+        try {
+          const parsed = JSON.parse(raw);
+          bodyToSend = JSON.stringify(parsed);
+          contentType = "application/json";
+        } catch {
+          bodyToSend = raw;
+          contentType = "text/plain";
+        }
+      }
+
       const url = `/api/auth/session?provider=${encodeURIComponent(sessionProvider)}`;
       const res = await fetch(url, {
         method: "PUT",
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type": contentType,
         },
-        body: JSON.stringify(parsed),
+        body: bodyToSend,
       });
 
       let data = null;
@@ -443,14 +488,11 @@ export default function ProviderDetailClient() {
   const handleSaveApiKey = async (formData) => {
     setAddConnectionError("");
     try {
-      if (isCodex) {
-        const result = await importCodexToken(formData.apiKey, formData.name);
-        if (result?.success) {
-          await fetchConnections();
-          setShowAddApiKeyModal(false);
-          return;
-        }
-        setAddConnectionError(result?.error || "Failed to import Codex token");
+      // Codex:
+      // - addApiKeyMode=default => API Key (create connection via /api/providers)
+      // - Access Token tidak lewat modal ini (pakai Paste Session)
+      if (isCodex && addApiKeyMode !== "default") {
+        setAddConnectionError("Gunakan 'Paste Access Token' untuk access token.");
         return;
       }
 
@@ -1174,12 +1216,12 @@ export default function ProviderDetailClient() {
                     <Button size="sm" icon="lock" variant="secondary" onClick={triggerOAuthConnection}>
                       {oauthConnectionLabel}
                     </Button>
-                    <Button size="sm" icon="key" variant="secondary" onClick={triggerCodexApiTokenConnection}>
-                      Save API Token
+                    <Button size="sm" icon="key" variant="secondary" onClick={triggerCodexApiKeyConnection}>
+                      Add API Key
                     </Button>
                     {hasSessionPaste && (
-                      <Button size="sm" icon="upload" onClick={openSessionImport}>
-                        Paste Session
+                      <Button size="sm" icon="upload" onClick={triggerCodexAccessTokenConnection}>
+                        Paste Access Token
                       </Button>
                     )}
                   </>
@@ -1249,19 +1291,19 @@ export default function ProviderDetailClient() {
                         size="sm"
                         icon="key"
                         variant="secondary"
-                        onClick={triggerCodexApiTokenConnection}
+                        onClick={triggerCodexApiKeyConnection}
                         className="w-full sm:w-auto"
                       >
-                        Save API Token
+                        Add API Key
                       </Button>
                       {hasSessionPaste && (
                         <Button
                           size="sm"
                           icon="upload"
-                          onClick={openSessionImport}
+                          onClick={triggerCodexAccessTokenConnection}
                           className="w-full sm:w-auto"
                         >
-                          Paste Session
+                          Paste Access Token
                         </Button>
                       )}
                     </>
@@ -1361,7 +1403,7 @@ export default function ProviderDetailClient() {
         providerName={providerInfo.name}
         isCompatible={isCompatible}
         isAnthropic={isAnthropicCompatible}
-        authType={isCodex ? codexApiAuthType : providerInfo?.authType}
+        authType={isCodex ? (addApiKeyMode === "default" ? "apikey" : "access_token") : providerInfo?.authType}
         authHint={providerInfo?.authHint}
         website={providerInfo?.website}
         proxyPools={proxyPools}
@@ -1393,7 +1435,7 @@ export default function ProviderDetailClient() {
             />
           </div>
           {sessionImportError && <p className="text-xs text-red-500">{sessionImportError}</p>}
-          <p className="text-xs text-text-muted">Paste JSON session mentah. Field `accessToken`, `sessionToken`, `expires`, `account`, dan `user` akan dinormalisasi ke format `providerConnections`.</p>
+          <p className="text-xs text-text-muted">Bisa paste: raw JWT access token, multi-line token, JSON object, atau JSON array. Field `accessToken`/`access_token`/`sessionToken` dan `expires` akan dinormalisasi.</p>
           <div className="flex gap-2">
             <Button onClick={handleImportSession} fullWidth disabled={sessionImportLoading || !sessionPayload.trim()}>
               {sessionImportLoading ? "Importing..." : "Import Session"}

@@ -67,6 +67,26 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return true;
     });
 
+    // Codex: prioritaskan koneksi dengan auth bundle paling lengkap (cookie/device/session)
+    if (providerId === "codex" && availableConnections.length > 1) {
+      const scoreCodexBundle = (conn) => {
+        const b = conn?.providerSpecificData?.codexAuthBundle || {};
+        let s = 0;
+        if (typeof b.cookie === "string" && b.cookie.trim() !== "") s += 8;
+        if (typeof b.cf_clearance === "string" && b.cf_clearance.trim() !== "") s += 5;
+        if (typeof b.oai_device_id === "string" && b.oai_device_id.trim() !== "") s += 4;
+        if (typeof b.idToken === "string" && b.idToken.trim() !== "") s += 3;
+        if (typeof b.session_id === "string" && b.session_id.trim() !== "") s += 2;
+        if (typeof conn?.providerSpecificData?.chatgptAccountId === "string" && conn.providerSpecificData.chatgptAccountId) s += 2;
+        return s;
+      };
+      availableConnections.sort((a, b) => {
+        const diff = scoreCodexBundle(b) - scoreCodexBundle(a);
+        if (diff !== 0) return diff;
+        return (a.priority || 999) - (b.priority || 999);
+      });
+    }
+
     log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}`);
     connections.forEach(c => {
       const excluded = excludeSet.has(c.id);

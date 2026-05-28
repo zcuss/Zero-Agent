@@ -162,9 +162,13 @@ export default function ProvidersPage() {
   }, []);
 
   const getProviderStats = (providerId, authType) => {
-    const providerConnections = connections.filter(
-      (c) => c.provider === providerId && c.authType === authType,
-    );
+    // Untuk Codex/OpenAI: access token itu bukan OAuth refresh, tapi tetap dihitung sebagai "connected" di tab OAuth.
+    const providerConnections = connections.filter((c) => {
+      if (c.provider !== providerId) return false;
+      if (c.authType === authType) return true;
+      if ((providerId === "codex" || providerId === "openai") && authType === "oauth" && c.authType === "access_token") return true;
+      return false;
+    });
 
     const getEffectiveStatus = (conn) => {
       const isCooldown = Object.entries(conn).some(
@@ -206,15 +210,19 @@ export default function ProvidersPage() {
 
   // Toggle all connections for a provider on/off
   const handleToggleProvider = async (providerId, authType, newActive) => {
-    const providerConns = connections.filter(
-      (c) => c.provider === providerId && c.authType === authType,
-    );
+    const isCodexLikeOAuthGroup =
+      (providerId === "codex" || providerId === "openai") && authType === "oauth";
+
+    const inGroup = (c) => {
+      if (c.provider !== providerId) return false;
+      if (c.authType === authType) return true;
+      if (isCodexLikeOAuthGroup && c.authType === "access_token") return true;
+      return false;
+    };
+
+    const providerConns = connections.filter(inGroup);
     setConnections((prev) =>
-      prev.map((c) =>
-        c.provider === providerId && c.authType === authType
-          ? { ...c, isActive: newActive }
-          : c,
-      ),
+      prev.map((c) => (inGroup(c) ? { ...c, isActive: newActive } : c)),
     );
     await Promise.allSettled(
       providerConns.map((c) =>

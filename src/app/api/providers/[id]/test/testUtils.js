@@ -25,11 +25,24 @@ const OAUTH_TEST_CONFIG = {
     method: "POST",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
-    extraHeaders: { "Content-Type": "application/json", "originator": "codex-cli", "User-Agent": "codex-cli/1.0.18 (macOS; arm64)" },
-    // Minimal invalid body — triggers fast 400 without consuming quota
-    body: JSON.stringify({ model: "gpt-5.3-codex", input: [], stream: false, store: false }),
-    // 400 (bad request) means auth succeeded; only 401/403 means token is bad
-    acceptStatuses: [400],
+    extraHeaders: {
+      "Content-Type": "application/json",
+      "Accept": "text/event-stream, application/json",
+      "originator": "codex_cli_rs",
+      "User-Agent": "codex-imagen/0.2.6",
+      "version": "0.129.0",
+    },
+    // Body dibuat valid-minimal agar hasil test setara jalur runtime
+    body: JSON.stringify({
+      model: "gpt-5.3-codex",
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "ping" }] }],
+      stream: true,
+      store: false,
+      reasoning: { effort: "low", summary: "auto" },
+      include: ["reasoning.encrypted_content"],
+    }),
+    // 2xx saja yang dianggap valid agar tidak false-positive
+    acceptStatuses: [],
     refreshable: true,
   },
   "gemini-cli": {
@@ -232,6 +245,9 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     return { valid: true, error: null, refreshed: false, newTokens: null };
   }
 
+  const codexBundle = connection?.providerSpecificData?.codexAuthBundle || null;
+  const isCodex = connection.provider === "codex";
+
   let accessToken = connection.accessToken;
   let refreshed = false;
   let newTokens = null;
@@ -284,6 +300,23 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     const headers = config.noAuth
       ? { ...config.extraHeaders }
       : { [config.authHeader]: `${config.authPrefix}${accessToken}`, ...config.extraHeaders };
+
+    // Samakan test Codex dengan runtime executor per-koneksi
+    if (isCodex) {
+      if (typeof codexBundle?.originator === "string" && codexBundle.originator) headers["originator"] = codexBundle.originator;
+      if (typeof codexBundle?.userAgent === "string" && codexBundle.userAgent) headers["User-Agent"] = codexBundle.userAgent;
+      if (typeof codexBundle?.version === "string" && codexBundle.version) headers["version"] = codexBundle.version;
+      if (typeof codexBundle?.session_id === "string" && codexBundle.session_id) headers["session_id"] = codexBundle.session_id;
+      if (typeof codexBundle?.x_client_request_id === "string" && codexBundle.x_client_request_id) headers["x-client-request-id"] = codexBundle.x_client_request_id;
+      if (typeof codexBundle?.cookie === "string" && codexBundle.cookie.trim() !== "") headers["Cookie"] = codexBundle.cookie.trim();
+      if (typeof codexBundle?.cf_clearance === "string" && codexBundle.cf_clearance.trim() !== "" && !headers["Cookie"]) {
+        headers["Cookie"] = `cf_clearance=${codexBundle.cf_clearance.trim()}`;
+      }
+      if (typeof codexBundle?.oai_device_id === "string" && codexBundle.oai_device_id.trim() !== "") headers["oai-device-id"] = codexBundle.oai_device_id.trim();
+      const accountId = connection?.providerSpecificData?.chatgptAccountId || connection?.providerSpecificData?.workspaceId;
+      if (typeof accountId === "string" && accountId) headers["chatgpt-account-id"] = accountId;
+    }
+
     const fetchOpts = { method: config.method, headers };
     if (config.body) fetchOpts.body = config.body;
     const res = await fetchWithConnectionProxy(testUrl, fetchOpts, effectiveProxy);
@@ -630,8 +663,24 @@ export async function testSingleConnection(id) {
   const start = Date.now();
   let result;
 
-  if (connection.authType === "apikey" || connection.authType === "cookie") {
+  const isCodexLikeProvider = connection.provider === "codex" || connection.provider === "openai";
+  const effectiveAuthType = (
+    connection.authType === "oauth" &&
+    isCodexLikeProvider &&
+    connection.accessToken &&
+    !connection.refreshToken
+  )
+    ? "access_token"
+    : connection.authType;
+
+  if (effectiveAuthType === "apikey" || effectiveAuthType === "cookie") {
     result = await testApiKeyConnection(connection, effectiveProxy);
+  } else if (effectiveAuthType === "access_token") {
+    // Cockpit-style access token import tidak punya refresh flow dan tidak dites lewat API-key/OAuth refresh.
+    // Kalau token ada, koneksi dianggap valid; runtime request yang akan memakai bearer token langsung.
+    result = connection.accessToken
+      ? { valid: true, error: null, refreshed: false, newTokens: null }
+      : { valid: false, error: "No access token", refreshed: false, newTokens: null };
   } else {
     result = await testOAuthConnection(connection, effectiveProxy);
   }

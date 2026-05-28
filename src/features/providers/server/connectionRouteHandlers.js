@@ -86,6 +86,10 @@ export async function updateConnectionById(id, body) {
     defaultModel,
     isActive,
     apiKey,
+    accessToken,
+    refreshToken,
+    idToken,
+    authType,
     testStatus,
     lastError,
     lastErrorAt,
@@ -113,7 +117,17 @@ export async function updateConnectionById(id, body) {
   if (globalPriority !== undefined) updateData.globalPriority = globalPriority;
   if (defaultModel !== undefined) updateData.defaultModel = defaultModel;
   if (isActive !== undefined) updateData.isActive = isActive;
-  if (apiKey && existing.authType === "apikey") updateData.apiKey = apiKey;
+
+  // Allow updating credentials based on authType
+  if (authType === "access_token" || existing.authType === "access_token") {
+    if (authType !== undefined) updateData.authType = "access_token";
+    if (accessToken) updateData.accessToken = accessToken;
+    if (refreshToken) updateData.refreshToken = refreshToken;
+    if (idToken) updateData.idToken = idToken;
+  } else if (apiKey && existing.authType === "apikey") {
+    updateData.apiKey = apiKey;
+  }
+
   if (testStatus !== undefined) updateData.testStatus = testStatus;
   if (lastError !== undefined) updateData.lastError = lastError;
   if (lastErrorAt !== undefined) updateData.lastErrorAt = lastErrorAt;

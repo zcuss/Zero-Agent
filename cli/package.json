@@ -1,6 +1,6 @@
 {
   "name": "zero-agent",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Zero Agent CLI - Start and manage Zero Agent server",
   "bin": {
     "zero": "./cli.js"

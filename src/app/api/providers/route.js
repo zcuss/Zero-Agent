@@ -66,8 +66,28 @@ export async function GET() {
       const name = isCompatible
         ? (c.name || nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
         : c.name;
+
+      // Backward-compat: beberapa koneksi Codex/OpenAI lama tersimpan sebagai oauth
+      // padahal token-only (tanpa refresh). Surface sebagai access_token di UI/API list.
+      const isCodexLikeProvider = c.provider === "codex" || c.provider === "openai";
+      const normalizedAuthType = (
+        c.authType === "oauth" &&
+        isCodexLikeProvider &&
+        !!c.accessToken &&
+        !c.refreshToken
+      )
+        ? "access_token"
+        : c.authType;
+
+      const providerSpecificData = {
+        ...(c.providerSpecificData || {}),
+        ...(normalizedAuthType === "access_token" ? { authMethod: "access_token" } : {}),
+      };
+
       return {
         ...c,
+        authType: normalizedAuthType,
+        providerSpecificData,
         name,
         apiKey: undefined,
         accessToken: undefined,

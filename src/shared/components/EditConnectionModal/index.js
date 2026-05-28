@@ -52,6 +52,10 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   }, [connection]);
 
   const isOAuth = connection?.authType === "oauth";
+  const isAccessToken = connection?.authType === "access_token";
+  const credentialLabel = isAccessToken ? "Access Token" : "API Key";
+  const credentialPlaceholder = isAccessToken ? "Enter new access token" : "Enter new API key";
+  const credentialHint = isAccessToken ? "Leave blank to keep the current access token." : "Leave blank to keep the current API key.";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
   const isCompatible = connection
@@ -106,35 +110,47 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         priority: formData.priority,
       };
       if (!isOAuth && formData.apiKey) {
-        updates.apiKey = formData.apiKey;
-        let isValid = validationResult === "success";
-        if (!isValid) {
-          try {
-            setValidating(true);
-            setValidationResult(null);
-            const res = await fetch("/api/providers/validate", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                provider: connection.provider,
-                apiKey: formData.apiKey,
-                ...(isAzure ? { providerSpecificData: azureData } : {}),
-                ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
-              }),
-            });
-            const data = await res.json();
-            isValid = !!data.valid;
-            setValidationResult(isValid ? "success" : "failed");
-          } catch {
-            setValidationResult("failed");
-          } finally {
-            setValidating(false);
-          }
-        }
-        if (isValid) {
+        if (isAccessToken) {
+          updates.accessToken = formData.apiKey;
+          updates.authType = "access_token";
           updates.testStatus = "active";
           updates.lastError = null;
           updates.lastErrorAt = null;
+          updates.providerSpecificData = {
+            ...(connection.providerSpecificData || {}),
+            authMethod: "access_token",
+          };
+        } else {
+          updates.apiKey = formData.apiKey;
+          let isValid = validationResult === "success";
+          if (!isValid) {
+            try {
+              setValidating(true);
+              setValidationResult(null);
+              const res = await fetch("/api/providers/validate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  provider: connection.provider,
+                  apiKey: formData.apiKey,
+                  ...(isAzure ? { providerSpecificData: azureData } : {}),
+                  ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+                }),
+              });
+              const data = await res.json();
+              isValid = !!data.valid;
+              setValidationResult(isValid ? "success" : "failed");
+            } catch {
+              setValidationResult("failed");
+            } finally {
+              setValidating(false);
+            }
+          }
+          if (isValid) {
+            updates.testStatus = "active";
+            updates.lastError = null;
+            updates.lastErrorAt = null;
+          }
         }
       }
       
@@ -185,21 +201,23 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           <>
             <div className="flex gap-2">
               <Input
-                label="API Key"
+                label={credentialLabel}
                 type="password"
                 value={formData.apiKey}
                 onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-                placeholder="Enter new API key"
-                hint="Leave blank to keep the current API key."
+                placeholder={credentialPlaceholder}
+                hint={credentialHint}
                 className="flex-1"
               />
-              <div className="pt-6">
-                <Button onClick={handleValidate} disabled={!formData.apiKey || validating || saving} variant="secondary">
-                  {validating ? "Checking..." : "Check"}
-                </Button>
-              </div>
+              {!isAccessToken && (
+                <div className="pt-6">
+                  <Button onClick={handleValidate} disabled={!formData.apiKey || validating || saving} variant="secondary">
+                    {validating ? "Checking..." : "Check"}
+                  </Button>
+                </div>
+              )}
             </div>
-            {validationResult && (
+            {!isAccessToken && validationResult && (
               <Badge variant={validationResult === "success" ? "success" : "error"}>
                 {validationResult === "success" ? "Valid" : "Invalid"}
               </Badge>

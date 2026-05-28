@@ -1,12 +1,22 @@
 import { CODEX_PROVIDER_ID } from "./auth";
 
-export async function importCodexToken(accessToken, name) {
+export async function importCodexToken(accessTokenOrPayload, name) {
+  const body = typeof accessTokenOrPayload === "string"
+    ? accessTokenOrPayload
+    : JSON.stringify(accessTokenOrPayload);
+
   const res = await fetch("/api/oauth/codex/import-token", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ accessToken, name }),
+    headers: { "Content-Type": "text/plain" },
+    body: body.trim(),
   });
-  return res.json();
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    return { success: false, error: data?.error || "Failed to import access token" };
+  }
+
+  return data || { success: true };
 }
 
 export async function startCodexOAuthProxy({ appPort, state, codeVerifier, redirectUri }) {

@@ -180,17 +180,23 @@ export async function getRequestDetailById(id) {
   return row ? parseJson(row.data, null) : null;
 }
 
+const SHUTDOWN_HANDLER_KEY = "__zeroagent_requestDetails_shutdownHandler__";
+
 const _shutdownHandler = async () => {
   if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
   if (writeBuffer.length > 0) await flushToDatabase();
 };
 
 function ensureShutdownHandler() {
-  process.off("beforeExit", _shutdownHandler);
-  process.off("SIGINT", _shutdownHandler);
-  process.off("SIGTERM", _shutdownHandler);
-  process.off("exit", _shutdownHandler);
+  const prev = globalThis[SHUTDOWN_HANDLER_KEY];
+  if (typeof prev === "function") {
+    process.off("beforeExit", prev);
+    process.off("SIGINT", prev);
+    process.off("SIGTERM", prev);
+    process.off("exit", prev);
+  }
 
+  globalThis[SHUTDOWN_HANDLER_KEY] = _shutdownHandler;
   process.on("beforeExit", _shutdownHandler);
   process.on("SIGINT", _shutdownHandler);
   process.on("SIGTERM", _shutdownHandler);

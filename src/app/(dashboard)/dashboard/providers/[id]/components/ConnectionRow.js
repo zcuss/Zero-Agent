@@ -65,15 +65,25 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     }
   };
 
-  const rowAuthType = connection.authType || (isOAuth ? "oauth" : "apikey");
+  const providerAuthMethod = String(connection.providerSpecificData?.authMethod || "").toLowerCase();
+  const isCodexLikeProvider = connection.provider === "codex" || connection.provider === "openai";
+  const hasAccessTokenOnly = !!connection.accessToken && !connection.refreshToken;
+  const inferredAuthType =
+    providerAuthMethod === "access_token"
+      ? "access_token"
+      : (isCodexLikeProvider && connection.authType === "oauth" && hasAccessTokenOnly ? "access_token" : null);
+  const rowAuthType = inferredAuthType || connection.authType || (isOAuth ? "oauth" : "apikey");
   const isOAuthConnection = rowAuthType === "oauth";
   const isCookieConnection = rowAuthType === "cookie";
-  const authIcon = isCookieConnection ? "cookie" : isOAuthConnection ? "lock" : "key";
-  const authLabel = isOAuthConnection ? "OAuth" : isCookieConnection ? "Cookie" : "API Key";
+  const isAccessTokenConnection = rowAuthType === "access_token";
+
+  const authIcon = isCookieConnection ? "cookie" : isOAuthConnection ? "lock" : isAccessTokenConnection ? "token" : "key";
+  const authLabel = isOAuthConnection ? "OAuth" : isCookieConnection ? "Cookie" : isAccessTokenConnection ? "Access Token" : "API Key";
+
   const isEmail = (v) => typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
   const displayName = isOAuthConnection
     ? (isEmail(connection.email) ? connection.email : (isEmail(connection.name) ? connection.name : (connection.name || connection.email || connection.displayName || "OAuth Account")))
-    : (connection.name || connection.email || connection.displayName || "API Key");
+    : (connection.name || connection.email || connection.displayName || (isAccessTokenConnection ? "Access Token" : "API Key"));
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);

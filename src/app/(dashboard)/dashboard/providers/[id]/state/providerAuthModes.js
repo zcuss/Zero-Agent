@@ -6,17 +6,19 @@ export function resolveProviderAuthMode({ providerId, isCompatible, isOAuth, sup
   const isCodex = isCodexProvider(providerId);
   const isOpenai = isOpenaiProvider(providerId);
   const hasDualAuthModes = !isCompatible && (isCodex || isOpenai || (isOAuth && supportsApiKeyAuth));
+  const hasTripleAuthModes = !isCompatible && (isCodex || isOpenai);
   const uiConfig = getProviderUiConfig(providerId) || {};
   const oauthConnectionLabel = uiConfig.oauthLabel || "OAuth";
-  const apiKeyConnectionLabel = isCodex
-    ? "API / Access Token"
-    : (uiConfig.apiLabel || "API Key");
+  const apiKeyConnectionLabel = uiConfig.apiLabel || "API Key";
+  const accessTokenConnectionLabel = "Access Token";
 
   return {
     isCodex,
     isOpenai,
     hasDualAuthModes,
+    hasTripleAuthModes,
     oauthConnectionLabel,
     apiKeyConnectionLabel,
+    accessTokenConnectionLabel,
   };
 }

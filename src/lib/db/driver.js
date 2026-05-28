@@ -1,8 +1,34 @@
 import { ensureDirs, DATA_FILE } from "./paths.js";
+import { getRemoteDbConfig, isRemoteDbEnabled } from "./remoteConfig.js";
 
 // Use global to survive Next.js dev hot-reload (module state resets on reload)
 if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, logged: false };
 const state = global._dbAdapter;
+
+function getPostgresUrl(config) {
+  return (
+    config.neonDatabaseUrl ||
+    process.env.SUPABASE_POSTGRES_URL_NON_POOLING ||
+    process.env.POSTGRES_URL_NON_POOLING ||
+    process.env.SUPABASE_POSTGRES_URL ||
+    process.env.POSTGRES_URL ||
+    ""
+  );
+}
+
+async function tryRemotePostgres() {
+  if (!isRemoteDbEnabled()) return null;
+  const config = getRemoteDbConfig();
+  const connectionString = getPostgresUrl(config);
+  if (!connectionString) {
+    throw new Error("[DB] ZERO_DB_BACKEND is remote but no Postgres URL was provided. Set DATABASE_URL or SUPABASE_POSTGRES_URL_NON_POOLING.");
+  }
+  const { createNeonPostgresAdapter } = await import("./adapters/neonPostgresAdapter.js");
+  const adapter = createNeonPostgresAdapter(connectionString);
+  const { runPostgresBootstrapOnce } = await import("./migratePostgres.js");
+  await runPostgresBootstrapOnce(adapter);
+  return adapter;
+}
 
 async function tryBunSqlite() {
   // Bun runtime only — built-in, no install needed
@@ -53,23 +79,30 @@ async function trySqlJs() {
 }
 
 async function initAdapter() {
-  ensureDirs();
-  // Order per runtime:
-  //   Bun:  bun:sqlite → sql.js
-  //   Node: better-sqlite3 → node:sqlite (≥22.5) → sql.js
-  let adapter = await tryBunSqlite();
-  if (!adapter) adapter = await tryBetterSqlite();
-  if (!adapter) adapter = await tryNodeSqlite();
-  if (!adapter) adapter = await trySqlJs();
-  if (!adapter) throw new Error("[DB] No SQLite driver available (bun/better/node/sql.js all failed)");
+  // Remote DB path first (supabase/neon)
+  let adapter = await tryRemotePostgres();
+
+  if (!adapter) {
+    ensureDirs();
+    // Order per runtime:
+    //   Bun:  bun:sqlite → sql.js
+    //   Node: better-sqlite3 → node:sqlite (≥22.5) → sql.js
+    adapter = await tryBunSqlite();
+    if (!adapter) adapter = await tryBetterSqlite();
+    if (!adapter) adapter = await tryNodeSqlite();
+    if (!adapter) adapter = await trySqlJs();
+    if (!adapter) throw new Error("[DB] No SQLite driver available (bun/better/node/sql.js all failed)");
+
+    const { runMigrationOnce } = await import("./migrate.js");
+    await runMigrationOnce(adapter);
+  }
 
   if (!state.logged) {
-    console.log(`[DB] Driver: ${adapter.driver} | file: ${DATA_FILE}`);
+    const location = adapter.driver === "neon-postgres" ? "remote-postgres" : DATA_FILE;
+    console.log(`[DB] Driver: ${adapter.driver} | file: ${location}`);
     state.logged = true;
   }
 
-  const { runMigrationOnce } = await import("./migrate.js");
-  await runMigrationOnce(adapter);
   return adapter;
 }
 

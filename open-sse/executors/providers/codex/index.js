@@ -1,4 +1,4 @@
-﻿import { createHash } from "crypto";
+﻿import { createHash, randomUUID } from "crypto";
 import { BaseExecutor } from "../../shared/base.js";
 import { CODEX_DEFAULT_INSTRUCTIONS } from "../../../config/codexInstructions.js";
 import { PROVIDERS } from "../../../config/providers.js";
@@ -12,6 +12,9 @@ import { dbg } from "../../../utils/debugLog.js";
 // SSE error patterns inside 200-OK body that should trigger retry as if 503
 const CODEX_SSE_OVERLOADED_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
 const CODEX_SSE_PEEK_BYTES = 4096;
+const CODEX_ORIGINATOR = "codex_cli_rs";
+const CODEX_USER_AGENT = "codex-imagen/0.2.6";
+const CODEX_VERSION = "0.129.0";
 
 // In-memory map: hash(machineId + first assistant content) â†’ { sessionId, lastUsed }
 const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -112,6 +115,41 @@ function generateSessionId() {
   return `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function decodeJwtPayload(jwt) {
+  try {
+    const parts = String(jwt || "").split(".");
+    if (parts.length < 2) return null;
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const pad = (4 - (b64.length % 4)) % 4;
+    return JSON.parse(Buffer.from(b64 + "=".repeat(pad), "base64").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function extractChatGptAccountIdFromToken(token) {
+  const payload = decodeJwtPayload(token);
+  return payload?.["https://api.openai.com/auth"]?.chatgpt_account_id || null;
+}
+
+function getTokenDiagnostics(token) {
+  const payload = decodeJwtPayload(token) || {};
+  const authClaim = payload?.["https://api.openai.com/auth"] || {};
+  const exp = Number(payload?.exp || 0);
+  const nowSec = Math.floor(Date.now() / 1000);
+  const ttlSec = exp > 0 ? (exp - nowSec) : null;
+  return {
+    iss: typeof payload?.iss === "string" ? payload.iss : "none",
+    audType: Array.isArray(payload?.aud) ? "array" : typeof payload?.aud,
+    hasAuthClaim: !!authClaim && typeof authClaim === "object",
+    hasAccountId: !!authClaim?.chatgpt_account_id,
+    hasWorkspaceId: !!authClaim?.workspace_id,
+    exp,
+    ttlSec,
+    expired: ttlSec !== null ? ttlSec <= 0 : null,
+  };
+}
+
 // Extract text content from an input item
 function extractItemText(item) {
   if (!item) return "";
@@ -130,16 +168,16 @@ function normalizeSessionId(value) {
   return v;
 }
 
-// Resolve prompt-cache session id with priority: body â†’ assistant-text-hash â†’ workspaceId â†’ machineId
+// Resolve prompt-cache session id with priority: body → assistant-text-hash → accountId → machineId
 function resolveCacheSessionId(body, credentials, machineId) {
-  // 1. Client-provided session/conversation id (highest priority â€” stable per conversation)
+  // 1. Client-provided session/conversation id (highest priority — stable per conversation)
   const fromBody =
     normalizeSessionId(body?.prompt_cache_key) ||
     normalizeSessionId(body?.session_id) ||
     normalizeSessionId(body?.conversation_id);
   if (fromBody) return fromBody;
 
-  // 2. Hash accumulated assistant text (â‰¥50 chars) â€” sticky session across turns
+  // 2. Hash accumulated assistant text (≥50 chars) — sticky session across turns
   if (Array.isArray(body?.input) && body.input.length > 0) {
     let text = "";
     const MIN_LEN = 50;
@@ -164,11 +202,14 @@ function resolveCacheSessionId(body, credentials, machineId) {
     }
   }
 
-  // 3. Account-wide fallback (workspaceId from connection)
-  const workspaceId = normalizeSessionId(credentials?.providerSpecificData?.workspaceId);
-  if (workspaceId) return workspaceId;
+  // 3. Account-wide fallback (ChatGPT account/workspace id from connection)
+  const accountId = normalizeSessionId(
+    credentials?.providerSpecificData?.chatgptAccountId ||
+    credentials?.providerSpecificData?.workspaceId
+  );
+  if (accountId) return accountId;
 
-  // 4. Last resort â€” stable per-machine id
+  // 4. Last resort — stable per-machine id
   return machineId ? `sess_${hashContent(machineId)}` : generateSessionId();
 }
 
@@ -196,14 +237,57 @@ export class CodexExecutor extends BaseExecutor {
    */
   buildHeaders(credentials, stream = true) {
     const headers = super.buildHeaders(credentials, stream);
-    headers["session_id"] = this._currentSessionId || credentials?.connectionId || "default";
-    // Identify client type to Codex backend (matches official codex CLI)
-    if (!headers["originator"]) headers["originator"] = "codex_cli_rs";
-    // Workspace binding header â€” improves account scope + cache affinity
-    const workspaceId = credentials?.providerSpecificData?.workspaceId;
-    if (typeof workspaceId === "string" && workspaceId && !headers["chatgpt-account-id"]) {
-      headers["chatgpt-account-id"] = workspaceId;
+    const requestId = randomUUID();
+    const token = credentials?.accessToken || credentials?.apiKey || "";
+
+    // Cockpit-style Codex headers: mirror the working Codex image provider flow.
+    headers["Accept"] = "text/event-stream, application/json";
+    headers["Content-Type"] = "application/json";
+
+    // Optional: override dari bundle (hasil import Cockpit) supaya benar-benar identik.
+    const bundle = credentials?.providerSpecificData?.codexAuthBundle || null;
+
+    headers["originator"] = (typeof bundle?.originator === "string" && bundle.originator) ? bundle.originator : CODEX_ORIGINATOR;
+    headers["User-Agent"] = (typeof bundle?.userAgent === "string" && bundle.userAgent) ? bundle.userAgent : CODEX_USER_AGENT;
+    headers["version"] = (typeof bundle?.version === "string" && bundle.version) ? bundle.version : CODEX_VERSION;
+
+    headers["x-client-request-id"] = (typeof bundle?.x_client_request_id === "string" && bundle.x_client_request_id)
+      ? bundle.x_client_request_id
+      : requestId;
+
+    headers["session_id"] = (typeof bundle?.session_id === "string" && bundle.session_id)
+      ? bundle.session_id
+      : (this._currentSessionId || requestId);
+
+    // Cookie / CF binding (kalau Cockpit menyertakan). Ini sering jadi pembeda 401.
+    if (typeof bundle?.cookie === "string" && bundle.cookie.trim() !== "") {
+      headers["Cookie"] = bundle.cookie.trim();
     }
+    if (typeof bundle?.cf_clearance === "string" && bundle.cf_clearance.trim() !== "") {
+      // Kalau cookie tidak diberikan tapi cf_clearance diberikan, tetap kirim sebagai cookie.
+      if (!headers["Cookie"]) headers["Cookie"] = `cf_clearance=${bundle.cf_clearance.trim()}`;
+    }
+    if (typeof bundle?.oai_device_id === "string" && bundle.oai_device_id.trim() !== "") {
+      headers["oai-device-id"] = bundle.oai_device_id.trim();
+    }
+
+    // Workspace/account binding header — use stored account first, then decode token claim.
+    const accountId =
+      credentials?.providerSpecificData?.chatgptAccountId ||
+      credentials?.providerSpecificData?.workspaceId ||
+      extractChatGptAccountIdFromToken(token);
+    if (typeof accountId === "string" && accountId) {
+      headers["chatgpt-account-id"] = accountId;
+    }
+
+    const tokenPrefix = typeof token === "string" ? token.slice(0, 12) : "";
+    const tokenFp = tokenPrefix ? hashContent(tokenPrefix) : "none";
+    const td = getTokenDiagnostics(token);
+    dbg(
+      "CODEX_AUTH",
+      `conn=${credentials?.connectionId || "unknown"} auth=${credentials?.authType || credentials?.providerSpecificData?.authMethod || "unknown"} tokenLen=${typeof token === "string" ? token.length : 0} tokenFp=${tokenFp} acct=${typeof accountId === "string" && accountId ? accountId : "none"} originator=${headers["originator"]} ua=${headers["User-Agent"]} hasAuthHeader=${!!headers["Authorization"]} hasCookie=${!!headers["Cookie"]} hasDevice=${!!headers["oai-device-id"]} hasBundle=${!!bundle} hasBundleCookie=${!!bundle?.cookie} hasBundleDevice=${!!bundle?.oai_device_id} hasBundleSession=${!!bundle?.session_id} iss=${td.iss} audType=${td.audType} hasAuthClaim=${td.hasAuthClaim} hasAccountId=${td.hasAccountId} hasWorkspaceId=${td.hasWorkspaceId} exp=${td.exp || 0} ttlSec=${td.ttlSec ?? "none"} expired=${td.expired}`
+    );
+
     return headers;
   }
 
