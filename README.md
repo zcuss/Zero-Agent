@@ -1285,7 +1285,8 @@ Thanks to all contributors who helped make 9Router better!
 
 ## 📊 Star Chart
 
-[![Star Chart](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
+## Stargazers over time
+[![Stargazers over time](https://starchart.cc/zcuss/Zero-Agent.svg?variant=adaptive)](https://starchart.cc/zcuss/Zero-Agent)
 
 
 
