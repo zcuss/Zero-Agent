@@ -4,11 +4,11 @@
 
 **Connect All AI Code Tools (Claude Code, Cursor, Antigravity, Copilot, Codex, Gemini, OpenCode, Cline, OpenClaw...) to 40+ AI Providers & 100+ Models.**
 
-[![npm](https://img.shields.io/npm/v/zero-agent.svg)](https://www.npmjs.com/package/zero-agent)
-[![Downloads](https://img.shields.io/npm/dm/zero-agent.svg)](https://www.npmjs.com/package/zero-agent)
+[![npm](https://img.shields.io/npm/v/@zcus/zero-agent.svg)](https://www.npmjs.com/package/@zcus/zero-agent)
+[![Downloads](https://img.shields.io/npm/dm/@zcus/zero-agent.svg)](https://www.npmjs.com/package/@zcus/zero-agent)
 [![Docker Pulls](https://img.shields.io/docker/pulls/zcus/zero-agent.svg?logo=docker&label=Docker%20pulls)](https://github.com/zcuss/Zero-Agent)
 [![GHCR](https://img.shields.io/badge/GHCR-zcuss%2FZero-Agent-blue?logo=github)](https://github.com/zcuss/Zero-Agent/pkgs/container/zero-agent)
-[![License](https://img.shields.io/npm/l/zero-agent.svg)](https://github.com/zcuss/Zero-Agent/blob/main/LICENSE)
+[![License](https://img.shields.io/npm/l/@zcus/zero-agent.svg)](https://github.com/zcuss/Zero-Agent/blob/main/LICENSE)
 
 <a href="https://trendshift.io/repositories/22628" target="_blank"><img src="https://trendshift.io/api/badge/repositories/22628" alt="zcuss%2FZero-Agent | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
@@ -40,11 +40,11 @@
 **Option 1 — npm (recommended for desktop):**
 
 ```bash
-npm install -g zero-agent
+npm install -g @zcus/zero-agent
 zero
 
 # Or run directly with npx
-npx zero-agent
+npx @zcus/zero-agent
 ```
 
 **Option 2 — Docker (server/VPS):**

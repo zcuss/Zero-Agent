@@ -15,9 +15,9 @@ export const GITHUB_CONFIG = {
 
 // Updater configuration
 export const UPDATER_CONFIG = {
-  npmPackageName: "zero-agent",
-  installCmd: "npm i -g zero-agent",
-  installCmdLatest: "npm i -g zero-agent@latest --prefer-online",
+  npmPackageName: "@zcus/zero-agent",
+  installCmd: "npm i -g @zcus/zero-agent",
+  installCmdLatest: "npm i -g @zcus/zero-agent@latest --prefer-online",
   shutdownCountdownSec: 3,
   exitDelayMs: 500,
   statusPort: 20130,

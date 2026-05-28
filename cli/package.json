@@ -1,7 +1,10 @@
 {
-  "name": "zero-agent",
+  "name": "@zcus/zero-agent",
   "version": "0.0.4",
   "description": "Zero Agent CLI - Start and manage Zero Agent server",
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "zero": "./cli.js"
   },
